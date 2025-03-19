@@ -1,0 +1,59 @@
+import RPi.GPIO as GPIO
+import time
+import subprocess
+import os
+import signal
+
+# GPIO Pins for Buttons and LEDs
+SCRIPTS = {
+    2: ("/home/deep/deep-iot-design-project/image-voice/script.py", 3),   # Button on GPIO 2, LED on GPIO 3
+    4: ("/home/deep/deep-iot-design-project/face-recognition/main.py", 5), # Button on GPIO 4, LED on GPIO 5
+    6: ("/home/deep/deep-iot-design-project/image-captioning/script-3.py", 7) # Button on GPIO 6, LED on GPIO 7
+}
+
+# GPIO Setup
+GPIO.setmode(GPIO.BCM)
+for button, (script, led) in SCRIPTS.items():
+    GPIO.setup(button, GPIO.IN, pull_up_down=GPIO.PUD_UP)  # Button as input with pull-up
+    GPIO.setup(led, GPIO.OUT)  # LED as output
+    GPIO.output(led, GPIO.LOW)  # Turn off LEDs initially
+
+current_process = None  # Track running process
+
+def stop_current_process():
+    """Stop the currently running script."""
+    global current_process
+    if current_process:
+        os.killpg(os.getpgid(current_process.pid), signal.SIGTERM)  # Kill process group
+        current_process = None
+        print("Stopped running script.")
+
+def run_script(script_path, led_pin):
+    """Run the given script and turn on the LED."""
+    global current_process
+    
+    # Stop any running script
+    stop_current_process()
+
+    # Turn off all LEDs
+    for _, led in SCRIPTS.values():
+        GPIO.output(led, GPIO.LOW)
+
+    # Turn on selected LED
+    GPIO.output(led_pin, GPIO.HIGH)
+    
+    print(f"Starting script: {script_path}")
+    
+    # Run the script in a new process group
+    current_process = subprocess.Popen(["python3", script_path], preexec_fn=os.setpgrp)
+
+try:
+    while True:
+        for button, (script, led) in SCRIPTS.items():
+            if GPIO.input(button) == GPIO.LOW:  # Button pressed
+                run_script(script, led)
+                time.sleep(0.3)  # Debounce delay
+
+except KeyboardInterrupt:
+    stop_current_process()  # Stop any running script
+    GPIO.cleanup()  # Cleanup GPIO on exit
